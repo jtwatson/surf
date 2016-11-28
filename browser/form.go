@@ -1,10 +1,12 @@
 package browser
 
 import (
-	"github.com/PuerkitoBio/goquery"
-	"github.com/headzoo/surf/errors"
+	"html"
 	"net/url"
 	"strings"
+
+	"github.com/PuerkitoBio/goquery"
+	"github.com/headzoo/surf/errors"
 )
 
 // Submittable represents an element that may be submitted, such as a form.
@@ -13,6 +15,46 @@ type Submittable interface {
 	Action() string
 	Input(name, value string) error
 	Set(name, value string) error
+
+	// Remove will remove the input completely from the form.
+	Remove(name string)
+
+	// RemoveValue will remove a single instance of a form value whose name and value match.
+	// This is valuable for removing a single value from a select multiple.
+	RemoveValue(name, value string) error
+
+	// Value returns the current value of a form element whose name matches.  If name is not
+	// found, error is returned.  For multiple value form element such as select multiple,
+	// the first value is returned.
+	Value(name string) (string, error)
+
+	// Check will set a checkbox to its active state.  This is done by adding it to
+	// the form and setting its value to the value attribute defined in the form.
+	Check(name string) error
+
+	// UnCheck will set a checkbox to its inactive state.  This is done by removing
+	// it from the form.
+	UnCheck(name string) error
+
+	// IsChecked returns a boolean indicating if the checkbox is active or inactive.
+	IsChecked(name string) (bool, error)
+
+	// SelectByOptionLabel sets the current value of a select form element acording to the
+	// options label.  If the element is a select multiple, multiple options may be selected.
+	SelectByOptionLabel(name string, optionLabel ...string) error
+
+	// SelectByOptionValue sets the current value of a select form element acording to the
+	// options value.  If the element is a select multiple, multiple options may be selected.
+	SelectByOptionValue(name string, optionValue ...string) error
+
+	// SelectValues returns the current values of a form element whose name matches.  If name is not
+	// found, error is returned.  For select multiple elements, all values are returned.
+	SelectValues(name string) ([]string, error)
+
+	// SelectLabels returns the labels for the selected options for a select form element whose name
+	// matches.  If name is not found, error is returned.
+	SelectLabels(name string) ([]string, error)
+
 	Click(button string) error
 	ClickByValue(name, value string) error
 	Submit() error
@@ -27,11 +69,13 @@ type Form struct {
 	action    string
 	fields    url.Values
 	buttons   url.Values
+	checkboxs url.Values
+	selects   selects
 }
 
 // NewForm creates and returns a *Form type.
 func NewForm(bow Browsable, s *goquery.Selection) *Form {
-	fields, buttons := serializeForm(s)
+	fields, buttons, checkboxs, selects := serializeForm(s)
 	method, action := formAttributes(bow, s)
 
 	return &Form{
@@ -41,6 +85,8 @@ func NewForm(bow Browsable, s *goquery.Selection) *Form {
 		action:    action,
 		fields:    fields,
 		buttons:   buttons,
+		checkboxs: checkboxs,
+		selects:   selects,
 	}
 }
 
@@ -61,8 +107,7 @@ func (f *Form) Input(name, value string) error {
 		f.fields.Set(name, value)
 		return nil
 	}
-	return errors.NewElementNotFound(
-		"No input found with name '%s'.", name)
+	return errors.NewElementNotFound("No input found with name '%s'.", name)
 }
 
 // Set will set the value of a form field if it exists,
@@ -73,6 +118,131 @@ func (f *Form) Set(name, value string) error {
 		return nil
 	}
 	return f.Input(name, value)
+}
+
+// Check sets the checkbox value to its active state.
+func (f *Form) Check(name string) error {
+	if _, ok := f.checkboxs[name]; ok {
+		f.fields.Set(name, f.checkboxs.Get(name))
+		return nil
+	}
+	return errors.NewElementNotFound("No checkbox found with name '%s'.", name)
+}
+
+// UnCheck sets the checkbox value to inactive state.
+func (f *Form) UnCheck(name string) error {
+	if _, ok := f.checkboxs[name]; ok {
+		f.fields.Del(name)
+		return nil
+	}
+	return errors.NewElementNotFound("No checkbox found with name '%s'.", name)
+}
+
+// IsChecked returns the current state of the checkbox
+func (f *Form) IsChecked(name string) (bool, error) {
+	if _, ok := f.checkboxs[name]; ok {
+		_, found := f.fields[name]
+		return found, nil
+	}
+	return false, errors.NewElementNotFound("No checkbox found with name '%s'.", name)
+}
+
+// Remove will remove the form field if it exists.
+func (f *Form) Remove(name string) {
+	f.fields.Del(name)
+}
+
+// Value returns the current value of a form element whose name matches.  If name is not
+// found, error is returned.  For multiple value form element such as select multiple,
+// the first value is returned.
+func (f *Form) Value(name string) (string, error) {
+	if _, ok := f.fields[name]; ok {
+		return f.fields.Get(name), nil
+	}
+	return "", errors.NewElementNotFound("No input found with name '%s'.", name)
+}
+
+// RemoveValue will remove a single instance of a form value whose name and value match.
+// This is valuable for removing a single value from a select multiple.
+func (f *Form) RemoveValue(name, val string) error {
+	if _, ok := f.fields[name]; !ok {
+		return errors.NewElementNotFound("No input found with name '%s'.", name)
+	}
+	var save []string
+	for _, v := range f.fields[name] {
+		if v != val {
+			save = append(save, v)
+		}
+	}
+	if len(save) == 0 {
+		f.fields.Del(name)
+	} else {
+		f.fields[name] = save
+	}
+	return nil
+}
+
+// SelectByOptionLabel sets the current value of a select form element acording to the
+// options label.  If the element is a select multiple, multiple options may be selected.
+func (f *Form) SelectByOptionLabel(name string, optionLabel ...string) error {
+	s, ok := f.selects[name]
+	if !ok {
+		return errors.NewElementNotFound("No select element found with name '%s'.", name)
+	}
+	if len(optionLabel) > 1 && !s.multiple {
+		return errors.NewElementNotFound("The select element with name '%s' is not a select miltiple.", name)
+	}
+	f.fields.Del(name)
+	for _, l := range optionLabel {
+		if _, ok := s.labels[l]; !ok {
+			return errors.NewElementNotFound("The select element with name %q does not have an option with label %q", name, l)
+		}
+		f.fields.Add(name, s.labels.Get(l))
+	}
+	return nil
+}
+
+// SelectByOptionValue sets the current value of a select form element acording to the
+// options value.  If the element is a select multiple, multiple options may be selected.
+func (f *Form) SelectByOptionValue(name string, optionValue ...string) error {
+	s, ok := f.selects[name]
+	if !ok {
+		return errors.NewElementNotFound("No select element found with name '%s'.", name)
+	}
+	if len(optionValue) > 1 && !s.multiple {
+		return errors.NewElementNotFound("The select element with name '%s' is not a select miltiple.", name)
+	}
+	f.fields.Del(name)
+	for _, v := range optionValue {
+		if _, ok := s.values[v]; !ok {
+			return errors.NewElementNotFound("The select element with name %q does not have an option with value %q", name, v)
+		}
+		f.fields.Add(name, v)
+	}
+	return nil
+}
+
+// SelectValues returns the current values of a form element whose name matches.  If name is not
+// found, error is returned.  For select multiple elements, all values are returned.
+func (f *Form) SelectValues(name string) ([]string, error) {
+	if _, ok := f.fields[name]; ok {
+		return f.fields[name], nil
+	}
+	return nil, errors.NewElementNotFound("No input found with name '%s'.", name)
+}
+
+// SelectLabels returns the labels for the selected options for a select form element whose name
+// matches.  If name is not found, error is returned.
+func (f *Form) SelectLabels(name string) ([]string, error) {
+	s, ok := f.selects[name]
+	if !ok {
+		return nil, errors.NewElementNotFound("No select element found with name '%s'.", name)
+	}
+	var labels []string
+	for _, v := range f.fields[name] {
+		labels = append(labels, s.values.Get(v))
+	}
+	return labels, nil
 }
 
 // Submit submits the form.
@@ -161,27 +331,64 @@ func (f *Form) send(buttonName, buttonValue string) error {
 // Serialize converts the form fields into a url.Values type.
 // Returns two url.Value types. The first is the form field values, and the
 // second is the form button values.
-func serializeForm(sel *goquery.Selection) (url.Values, url.Values) {
-	input := sel.Find("input,button,textarea")
-	if input.Length() == 0 {
-		return url.Values{}, url.Values{}
-	}
-
+func serializeForm(sel *goquery.Selection) (url.Values, url.Values, url.Values, selects) {
 	fields := make(url.Values)
 	buttons := make(url.Values)
-	input.Each(func(_ int, s *goquery.Selection) {
-		name, ok := s.Attr("name")
-		if ok {
+	checkboxs := make(url.Values)
+	selects := make(selects)
+	sel.Find("input,button,textarea").Each(func(_ int, s *goquery.Selection) {
+		if name, ok := s.Attr("name"); ok {
 			val, _ := s.Attr("value")
 			if t, _ := s.Attr("type"); t == "submit" {
 				buttons.Add(name, val)
+			} else if t == "checkbox" || t == "radio" {
+				if c, found := s.Attr("checked"); found && c == "checked" {
+					fields.Add(name, val)
+				}
+				if t == "checkbox" {
+					checkboxs.Add(name, val)
+				}
 			} else {
 				fields.Add(name, val)
 			}
 		}
 	})
 
-	return fields, buttons
+	sel.Find("select").Each(func(_ int, s *goquery.Selection) {
+		if name, ok := s.Attr("name"); ok {
+			_, multiple := s.Attr("multiple")
+			selects[name] = selectOptions{
+				multiple: multiple,
+				values:   make(url.Values),
+				labels:   make(url.Values),
+			}
+			var foundSelected bool
+			s.Find(`option`).Each(func(_ int, ss *goquery.Selection) {
+				val, _ := ss.Attr("value")
+				l, _ := ss.Html()
+				selects[name].values.Add(val, strings.TrimSpace(html.UnescapeString(l)))
+				selects[name].labels.Add(strings.TrimSpace(html.UnescapeString(l)), val)
+				if sel, _ := ss.Attr("selected"); sel != "selected" || foundSelected {
+					return
+				}
+				fields.Add(name, val)
+				if multiple {
+					return
+				}
+				foundSelected = true
+			})
+		}
+	})
+
+	return fields, buttons, checkboxs, selects
+}
+
+type selects map[string]selectOptions
+
+type selectOptions struct {
+	multiple bool
+	values   url.Values
+	labels   url.Values
 }
 
 func formAttributes(bow Browsable, s *goquery.Selection) (string, string) {
