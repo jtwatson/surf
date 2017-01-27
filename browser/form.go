@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"strings"
 
+	"io"
+
 	"github.com/PuerkitoBio/goquery"
 	"github.com/headzoo/surf/errors"
 )
@@ -55,6 +57,14 @@ type Submittable interface {
 	// matches.  If name is not found, error is returned.
 	SelectLabels(name string) ([]string, error)
 
+	// File sets the value for an form input type file,
+	// it returns an ElementNotFound error if the field does not exists
+	File(name string, fileName string, data io.Reader) error
+
+	// SetFile sets the value for a form input type file.
+	// It will add the field to the form if necessary
+	SetFile(name string, fileName string, data io.Reader)
+
 	Click(button string) error
 	ClickByValue(name, value string) error
 	Submit() error
@@ -71,11 +81,12 @@ type Form struct {
 	buttons   url.Values
 	checkboxs url.Values
 	selects   selects
+	files     FileSet
 }
 
 // NewForm creates and returns a *Form type.
 func NewForm(bow Browsable, s *goquery.Selection) *Form {
-	fields, buttons, checkboxs, selects := serializeForm(s)
+	fields, buttons, checkboxs, selects, files := serializeForm(s)
 	method, action := formAttributes(bow, s)
 
 	return &Form{
@@ -87,6 +98,7 @@ func NewForm(bow Browsable, s *goquery.Selection) *Form {
 		buttons:   buttons,
 		checkboxs: checkboxs,
 		selects:   selects,
+		files:     files,
 	}
 }
 
@@ -102,12 +114,31 @@ func (f *Form) Action() string {
 }
 
 // Input sets the value of a form field.
+// it returns an ElementNotFound error if the field does not exist
 func (f *Form) Input(name, value string) error {
 	if _, ok := f.fields[name]; ok {
 		f.fields.Set(name, value)
 		return nil
 	}
 	return errors.NewElementNotFound("No input found with name '%s'.", name)
+}
+
+// File sets the value for an form input type file,
+// it returns an ElementNotFound error if the field does not exists
+func (f *Form) File(name string, fileName string, data io.Reader) error {
+
+	if _, ok := f.files[name]; ok {
+		f.files[name] = &File{fileName: fileName, data: data}
+		return nil
+	}
+	return errors.NewElementNotFound(
+		"No input type 'file' found with name '%s'.", name)
+}
+
+// SetFile sets the value for a form input type file.
+// It will add the field to the form if necessary
+func (f *Form) SetFile(name string, fileName string, data io.Reader) {
+	f.files[name] = &File{fileName: fileName, data: data}
 }
 
 // Set will set the value of a form field if it exists,
@@ -317,40 +348,42 @@ func (f *Form) send(buttonName, buttonValue string) error {
 
 	if strings.ToUpper(method) == "GET" {
 		return f.bow.OpenForm(aurl.String(), values)
-	} else {
-		enctype, _ := f.selection.Attr("enctype")
-		if enctype == "multipart/form-data" {
-			return f.bow.PostMultipart(aurl.String(), values)
-		}
-		return f.bow.PostForm(aurl.String(), values)
 	}
-
-	return nil
+	enctype, _ := f.selection.Attr("enctype")
+	if enctype == "multipart/form-data" {
+		return f.bow.PostMultipart(aurl.String(), values, f.files)
+	}
+	return f.bow.PostForm(aurl.String(), values)
 }
 
-// Serialize converts the form fields into a url.Values type.
+// serializeForm converts the form fields into a url.Values type.
 // Returns two url.Value types. The first is the form field values, and the
 // second is the form button values.
-func serializeForm(sel *goquery.Selection) (url.Values, url.Values, url.Values, selects) {
+func serializeForm(sel *goquery.Selection) (url.Values, url.Values, url.Values, selects, FileSet) {
 	fields := make(url.Values)
 	buttons := make(url.Values)
 	checkboxs := make(url.Values)
 	selects := make(selects)
+	files := make(FileSet)
 	sel.Find("input,button,textarea").Each(func(_ int, s *goquery.Selection) {
-		if v, ok := s.Attr("disabled"); ok && v == "disabled" {
+		if v, ok := s.Attr("disabled"); ok && strings.ToLower(v) == "disabled" {
 			return
 		}
 		if name, ok := s.Attr("name"); ok {
 			val, _ := s.Attr("value")
-			if t, _ := s.Attr("type"); t == "submit" {
+			t, _ := s.Attr("type")
+			t = strings.ToLower(t)
+			if t == "submit" {
 				buttons.Add(name, val)
 			} else if t == "checkbox" || t == "radio" {
-				if c, found := s.Attr("checked"); found && c == "checked" {
+				if c, found := s.Attr("checked"); found && strings.ToLower(c) == "checked" {
 					fields.Add(name, val)
 				}
 				if t == "checkbox" {
 					checkboxs.Add(name, val)
 				}
+			} else if t == "file" {
+				files[name] = &File{}
 			} else {
 				fields.Add(name, val)
 			}
@@ -358,7 +391,7 @@ func serializeForm(sel *goquery.Selection) (url.Values, url.Values, url.Values, 
 	})
 
 	sel.Find("select").Each(func(_ int, s *goquery.Selection) {
-		if v, ok := s.Attr("disabled"); ok && v == "disabled" {
+		if v, ok := s.Attr("disabled"); ok && strings.ToLower(v) == "disabled" {
 			return
 		}
 		if name, ok := s.Attr("name"); ok {
@@ -374,7 +407,7 @@ func serializeForm(sel *goquery.Selection) (url.Values, url.Values, url.Values, 
 				l, _ := ss.Html()
 				selects[name].values.Add(val, strings.TrimSpace(html.UnescapeString(l)))
 				selects[name].labels.Add(strings.TrimSpace(html.UnescapeString(l)), val)
-				if sel, _ := ss.Attr("selected"); sel != "selected" || foundSelected {
+				if sel, _ := ss.Attr("selected"); strings.ToLower(sel) != "selected" || foundSelected {
 					return
 				}
 				fields.Add(name, val)
@@ -386,7 +419,7 @@ func serializeForm(sel *goquery.Selection) (url.Values, url.Values, url.Values, 
 		}
 	})
 
-	return fields, buttons, checkboxs, selects
+	return fields, buttons, checkboxs, selects, files
 }
 
 type selects map[string]selectOptions
