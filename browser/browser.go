@@ -219,7 +219,7 @@ func (bow *Browser) Open(u string) error {
 	return bow.httpGET(ur, nil)
 }
 
-// Open requests the given URL using the HEAD method.
+// Head requests the given URL using the HEAD method.
 func (bow *Browser) Head(u string) error {
 	ur, err := url.Parse(u)
 	if err != nil {
@@ -310,6 +310,11 @@ func (bow *Browser) Reload() error {
 		return bow.httpRequest(bow.state.Request)
 	}
 	return errors.NewPageNotLoaded("Cannot reload, the previous request failed.")
+}
+
+// ClearHistory removes the history from the Browser
+func (bow *Browser) ClearHistory() {
+	bow.history.Clear()
 }
 
 // Bookmark saves the page URL in the bookmarks with the given name.
@@ -482,6 +487,12 @@ func (bow *Browser) SetBookmarksJar(bj jar.BookmarksJar) {
 // SetHistoryJar is used to set the history jar the browser uses.
 func (bow *Browser) SetHistoryJar(hj jar.History) {
 	bow.history = hj
+}
+
+// SetMaxHistory sets the maximum history that is stored.  A value
+// of 0 or less will store infinite history length.
+func (bow *Browser) SetMaxHistory(max int) {
+	bow.history.MaxHistory(max)
 }
 
 // SetHeadersJar sets the headers the browser sends with each request.
