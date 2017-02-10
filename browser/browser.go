@@ -489,6 +489,12 @@ func (bow *Browser) SetHistoryJar(hj jar.History) {
 	bow.history = hj
 }
 
+// SetMaxHistory sets the maximum history that is stored.  A value
+// of 0 or less will store infinite history length.
+func (bow *Browser) SetMaxHistory(max int) {
+	bow.history.MaxHistory(max)
+}
+
 // SetHeadersJar sets the headers the browser sends with each request.
 func (bow *Browser) SetHeadersJar(h http.Header) {
 	bow.headers = h
