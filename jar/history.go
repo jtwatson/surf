@@ -1,8 +1,9 @@
 package jar
 
 import (
-	"github.com/PuerkitoBio/goquery"
 	"net/http"
+
+	"github.com/PuerkitoBio/goquery"
 )
 
 // State represents a point in time.
@@ -23,6 +24,7 @@ func NewHistoryState(req *http.Request, resp *http.Response, dom *goquery.Docume
 
 // History is a type that records browser state.
 type History interface {
+	Clear()
 	Len() int
 	Push(p *State) int
 	Pop() *State
@@ -49,6 +51,12 @@ func NewMemoryHistory() *MemoryHistory {
 // Len returns the number of states in the history.
 func (his *MemoryHistory) Len() int {
 	return his.size
+}
+
+// Clear removes all history.
+func (his *MemoryHistory) Clear() {
+	his.top = nil
+	his.size = 0
 }
 
 // Push adds a new State at the front of the history.

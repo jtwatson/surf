@@ -219,7 +219,7 @@ func (bow *Browser) Open(u string) error {
 	return bow.httpGET(ur, nil)
 }
 
-// Open requests the given URL using the HEAD method.
+// Head requests the given URL using the HEAD method.
 func (bow *Browser) Head(u string) error {
 	ur, err := url.Parse(u)
 	if err != nil {
@@ -310,6 +310,11 @@ func (bow *Browser) Reload() error {
 		return bow.httpRequest(bow.state.Request)
 	}
 	return errors.NewPageNotLoaded("Cannot reload, the previous request failed.")
+}
+
+// ClearHistory removes the history from the Browser
+func (bow *Browser) ClearHistory() {
+	bow.history.Clear()
 }
 
 // Bookmark saves the page URL in the bookmarks with the given name.
