@@ -2,7 +2,8 @@ Surf
 ====
 
 [![Build Status](https://img.shields.io/travis/headzoo/surf/master.svg?style=flat-square)](https://travis-ci.org/headzoo/surf)
-[![Documentation](https://img.shields.io/badge/documentation-readthedocs-blue.svg?style=flat-square)](http://www.gosurf.io)
+[![GoDoc](https://godoc.org/github.com/headzoo/surf?status.svg)](http://godoc.org/github.com/headzoo/surf)
+[![Documentation](https://img.shields.io/badge/documentation-readthedocs-blue.svg?style=flat-square)](http://surf.readthedocs.io/)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](https://raw.githubusercontent.com/headzoo/surf/master/LICENSE.md)
 
 Surf is a Go (golang) library that implements a virtual web browser that you control pragmatically.
@@ -10,6 +11,9 @@ Surf isn't just another Go solution for downloading content from the web. Surf i
 like web browser, and includes: cookie management, history, bookmarking, user agent spoofing
 (with a nifty user agent builder), submitting forms, DOM selection and traversal via jQuery style
 CSS selectors, scraping assets like images, stylesheets, and other features.
+
+**NOTE: DEVELOPMENT ON THIS PROJECT IS VERY SLOW!**  
+I'm accepting pull requests and fixing bugs at a snail's pace right now. Partially because Surf has taken a backseat to projects which are more important to me, and the way Go handles vendoring makes me hesitant to make changes. Development will pick up again when I have more free time.
 
 * [Installation](#installation)
 * [General Usage](#quick-start)
@@ -21,10 +25,10 @@ CSS selectors, scraping assets like images, stylesheets, and other features.
 
 ### Installation
 Download the library using go.  
-`go get github.com/headzoo/surf`
+`go get gopkg.in/headzoo/surf.v1`
 
 Import the library into your project.  
-`import "github.com/headzoo/surf"`
+`import "gopkg.in/headzoo/surf.v1"`
 
 
 ### Quick Start
@@ -32,7 +36,7 @@ Import the library into your project.
 package main
 
 import (
-	"github.com/headzoo/surf"
+	"gopkg.in/headzoo/surf.v1"
 	"fmt"
 )
 
